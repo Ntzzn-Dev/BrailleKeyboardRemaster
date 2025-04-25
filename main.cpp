@@ -4,10 +4,10 @@
  * GitHub:  https://github.com/Ntzzn-Dev
  * Data:    24/04/2025
  * Descrição:
- *   Transforma seu teclado convencional em um teclado em braille. O programa tem
- * seu próprio tradutor, usando o atalho Ctrl+Shift+U ele copia o texto ja traduzido para
- * sua área de transferencia, podendo colar ele em braille ou no alfabeto IndoArábico
- * usando o Ctrl+V.
+ *   Transforma seu teclado convencional em um teclado em braille ou em Codigo morse. O 
+ * programa tem seu próprio tradutor, usando o atalho Ctrl+Shift+U ele copia o texto ja 
+ * traduzido para sua área de transferencia, podendo colar ele em braille ou no alfabeto 
+ * IndoArábico usando o Ctrl+V.
  *  Possui os prefixos para letras maiusculas e numerais.
  *
  * Observações:
@@ -26,6 +26,8 @@
 #include <atomic>
 #include <thread>
 #include <algorithm>
+#include <vector>
+#include <sstream>
 
 std::map<wchar_t, wchar_t> brailleMap = {
     {L'a', L'\u2801'}, {L'b', L'\u2803'}, {L'c', L'\u2809'},
@@ -66,9 +68,52 @@ std::map<wchar_t, wchar_t> prefixBrailleMap = {
     {L'n', L'\u283C'}, {L'm', L'\u2820'}
 };
 
+std::map<wchar_t, std::wstring> morseMap = {
+    {L'a', L".- "}, {L'b', L"-... "}, {L'c', L"-.-. "},
+    {L'd', L"-.. "}, {L'e', L". "}, {L'f', L"..-. "},
+    {L'g', L"--. "}, {L'h', L".... "}, {L'i', L".. "},
+    {L'j', L".--- "}, {L'k', L"-.- "}, {L'l', L".-.. "},
+    {L'm', L"-- "}, {L'n', L"-. "}, {L'o', L"--- "},
+    {L'p', L".--. "}, {L'q', L"--.- "}, {L'r', L".-. "},
+    {L's', L"... "}, {L't', L"- "}, {L'u', L"..- "},
+    {L'v', L"...- "}, {L'w', L".-- "}, {L'x', L"-..- "},
+    {L'y', L"-.-- "}, {L'z', L"--.. "}, {L'ç', L"-.-.. "},
+    
+    {L'0', L"----- "}, {L'1', L".---- "}, {L'2', L"..--- "},
+    {L'3', L"...-- "}, {L'4', L"....- "}, {L'5', L"..... "},
+    {L'6', L"-.... "}, {L'7', L"--... "}, {L'8', L"---.. "},
+    {L'9', L"----. "},
+
+    {L'.', L".-.-.- "}, {L',', L"--..-- "}, {L'?', L"..--.. "},
+    {L'!', L"-.-.-- "}, {L'-', L"-....- "}, {L'/', L"-..-. "},
+    {L'(', L"-.--. "}, {L')', L"-.--.- "}, {L' ', L"// "} 
+};
+
+std::map<std::wstring, wchar_t> reverseMorseMap = {
+    {L".-", L'a'}, {L"-...", L'b'}, {L"-.-.", L'c'},
+    {L"-..", L'd'}, {L".", L'e'}, {L"..-.", L'f'},
+    {L"--.", L'g'}, {L"....", L'h'}, {L"..", L'i'},
+    {L".---", L'j'}, {L"-.-", L'k'}, {L".-..", L'l'},
+    {L"--", L'm'}, {L"-.", L'n'}, {L"---", L'o'},
+    {L".--.", L'p'}, {L"--.-", L'q'}, {L".-.", L'r'},
+    {L"...", L's'}, {L"-", L't'}, {L"..-", L'u'},
+    {L"...-", L'v'}, {L".--", L'w'}, {L"-..-", L'x'},
+    {L"-.--", L'y'}, {L"--..", L'z'}, {L"-.-..", L'ç'},
+
+    {L"-----", L'0'}, {L".----", L'1'}, {L"..---", L'2'},
+    {L"...--", L'3'}, {L"....-", L'4'}, {L".....", L'5'},
+    {L"-....", L'6'}, {L"--...", L'7'}, {L"---..", L'8'},
+    {L"----.", L'9'},
+
+    {L".-.-.-", L'.'}, {L"--..--", L','}, {L"..--..", L'?'},
+    {L"-.-.--", L'!'}, {L"-....-", L'-'}, {L"-..-.", L'/'},
+    {L"-.--.", L'('}, {L"-.--.-", L')'}, {L"//", L' '}
+};
+
+
 HHOOK hook;
 #define MY_CUSTOM_EXTRA_INFO 0x12345678
-bool novaNumeracao = false, necessitaVerify = false;
+bool novaNumeracao = false, necessitaVerify = false, morseCgd = false;
 
 bool encontrarPrefixoNumerico(std::wstring ultimaPalavra){
     bool encontrou = false;
@@ -103,7 +148,7 @@ bool encontrarPrefixoAlfabetico(const std::wstring& ultimaPalavra) {
     return true;
 }
 
-void GetTextBack() {
+void GetLastText() {
     INPUT inputs[6] = {};
 
     inputs[0].type = INPUT_KEYBOARD;
@@ -140,7 +185,7 @@ void GetTextBack() {
 }
 
 
-std::wstring GetClp(){
+std::wstring GetClipboard(){
     std::wstring text;
 
     for (int i = 0; i < 10; ++i) {
@@ -194,10 +239,22 @@ std::wstring GetSelectedText() {
 
     SendInput(5, inputs, sizeof(INPUT));
 
-    return GetClp();
+    return GetClipboard();
 }
 
-std::wstring GetTranslatedText(std::wstring text){
+std::vector<std::wstring> SplitBySpace(const std::wstring& input) {
+    std::wistringstream stream(input);
+    std::wstring segment;
+    std::vector<std::wstring> result;
+
+    while (stream >> segment) {
+        result.push_back(segment);
+    }
+
+    return result;
+}
+
+std::wstring GetTranslatedTextBraille(std::wstring text){
     std::wstring translatedText;
     bool prefixNum = false;
     int prefixCaps = 0;
@@ -223,7 +280,7 @@ std::wstring GetTranslatedText(std::wstring text){
                 translatedText += prefixBrailleMap[L'n'];
                 prefixNum = true;
             }
-            translatedText += brailleMap[ch];
+            translatedText += brailleMap[towlower(ch)];
         } 
         // Prefixos
         else if(ch == L'\u283C'){
@@ -246,7 +303,30 @@ std::wstring GetTranslatedText(std::wstring text){
     return translatedText;
 }
 
-void CopyToClipboard(const std::wstring& text) {
+std::wstring GetTranslatedTextMorse(std::wstring text){
+    std::wstring translatedText;
+    std::vector<std::wstring> partes = SplitBySpace(text);
+
+    if(partes.size() > 1){
+        for (std::wstring morse : partes) {
+            // Tradução para IndoArabico
+            if (reverseMorseMap.count(morse)) {
+                translatedText += reverseMorseMap[morse];
+            } 
+        }
+    } else {
+        for (wchar_t ch : text) {
+            // Tradução para Morse
+            if (morseMap.count(towlower(ch))) {
+                translatedText += morseMap[towlower(ch)];
+            } 
+        }
+    }
+    
+    return translatedText;
+}
+
+void SetClipboard(const std::wstring& text) {
     bool sucesso = false;
 
     for (int i = 0; i < 10; ++i) {
@@ -279,29 +359,29 @@ void CopyToClipboard(const std::wstring& text) {
     }
 }
 
-void removerCaractere(std::wstring& str, wchar_t caractere) {
+void removeCaracter(std::wstring& str, wchar_t caractere) {
     size_t pos;
     while ((pos = str.find(caractere)) != std::wstring::npos) {
         str.erase(pos, 1);
     }
 }
 
-void verificacaoMaiuscula(){
-    std::wstring text = GetClp();
+void verifyCaps(){
+    std::wstring text = GetClipboard();
 
     //Garante que não há nada selecionado ja
     if(GetSelectedText() != text){
         return;
     }
     
-    GetTextBack();
+    GetLastText();
     std::wstring ultimaplv = GetSelectedText();
     if(encontrarPrefixoAlfabetico(ultimaplv)){
-        removerCaractere(ultimaplv, prefixBrailleMap[L'm']);
+        removeCaracter(ultimaplv, prefixBrailleMap[L'm']);
 
         ultimaplv.insert(0, 2, prefixBrailleMap[L'm']);
 
-        CopyToClipboard(ultimaplv);
+        SetClipboard(ultimaplv);
         
         //Soltar seleção
         keybd_event(VK_CONTROL, 0, 0, 0);
@@ -314,7 +394,7 @@ void verificacaoMaiuscula(){
         keybd_event(VK_RIGHT, 0, KEYEVENTF_KEYUP, 0);
     }
 
-    CopyToClipboard(text);
+    SetClipboard(text);
 
     necessitaVerify = false;
 }
@@ -328,11 +408,16 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
             return 1;
         }
 
+        if (p->vkCode == VK_F4 && wParam == WM_KEYDOWN) {
+            morseCgd = !morseCgd;
+            return 1;
+        }
+
         if ((GetAsyncKeyState(VK_CONTROL) & 0x8000) &&
             (GetAsyncKeyState(VK_SHIFT) & 0x8000) &&
             wParam == WM_KEYDOWN && p->vkCode == L'U') {
-                std::wstring translated = GetTranslatedText(GetSelectedText());
-                CopyToClipboard(translated);
+                std::wstring translated = morseCgd ? GetTranslatedTextMorse(GetSelectedText()) : GetTranslatedTextBraille(GetSelectedText());
+                SetClipboard(translated);
             return 1;
         }
 
@@ -351,62 +436,81 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
                 wchar_t key = towlower(unicodeChar[0]);
                 bool estaEmMaiusculo = std::isupper(unicodeChar[0]);
 
-                if (key == L' ' || key == L'\r' || key == L'\b' || wParam == VK_LEFT || wParam == VK_RIGHT || wParam == VK_UP || wParam == VK_DOWN) {
-                    novaNumeracao = true;
-                    if(necessitaVerify){
-                        verificacaoMaiuscula();
-                    }
-                } else {
-                    if (!(GetAsyncKeyState(VK_CONTROL) & 0x8000) && brailleMap.count(key)) {
-                        wchar_t brailleChar = brailleMap[key];
-                        
-                        if(std::isdigit(key) && novaNumeracao){
-                            GetTextBack();
-                            std::wstring ultimaplv = GetSelectedText();
-                            keybd_event(VK_RIGHT, 0, 0, 0);
-                            keybd_event(VK_RIGHT, 0, KEYEVENTF_KEYUP, 0);
+                if(morseCgd){
+                    if(!(GetAsyncKeyState(VK_CONTROL) & 0x8000) && morseMap.count(key)){
+                        std::wstring morseString = morseMap[key];
 
-                            if(!encontrarPrefixoNumerico(ultimaplv)){
-                                INPUT ip[2] = {};
-                                ip[0].type = INPUT_KEYBOARD;
-                                ip[0].ki.wScan = prefixBrailleMap[L'n'];
-                                ip[0].ki.dwFlags = KEYEVENTF_UNICODE;
-        
-                                ip[1] = ip[0];
-                                ip[1].ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
-        
-                                SendInput(2, ip, sizeof(INPUT));
-                            }
-                            novaNumeracao = false;
-                        }
-                        else if(!novaNumeracao && !(std::isdigit(key))){
-                            novaNumeracao = true;
-                        }
-
-                        if(estaEmMaiusculo){
+                        for (wchar_t c : morseString) {
                             INPUT ip[2] = {};
                             ip[0].type = INPUT_KEYBOARD;
-                            ip[0].ki.wScan = prefixBrailleMap[L'm'];
+                            ip[0].ki.wScan = c;
                             ip[0].ki.dwFlags = KEYEVENTF_UNICODE;
     
                             ip[1] = ip[0];
                             ip[1].ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
     
                             SendInput(2, ip, sizeof(INPUT));
-
-                            necessitaVerify = true;
                         }
-
-                        INPUT ip[2] = {};
-                        ip[0].type = INPUT_KEYBOARD;
-                        ip[0].ki.wScan = brailleChar;
-                        ip[0].ki.dwFlags = KEYEVENTF_UNICODE;
-
-                        ip[1] = ip[0];
-                        ip[1].ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
-
-                        SendInput(2, ip, sizeof(INPUT));
                         return 1;
+                    }
+                } else {
+                    if (key == L' ' || key == L'\r' || key == L'\b' || wParam == VK_LEFT || wParam == VK_RIGHT || wParam == VK_UP || wParam == VK_DOWN) {
+                        novaNumeracao = true;
+                        if(necessitaVerify){
+                            verifyCaps();
+                        }
+                    } else {
+                        if (!(GetAsyncKeyState(VK_CONTROL) & 0x8000) && brailleMap.count(key)) {
+                            wchar_t brailleChar = brailleMap[key];
+                            
+                            if(std::isdigit(key) && novaNumeracao){
+                                GetLastText();
+                                std::wstring ultimaplv = GetSelectedText();
+                                keybd_event(VK_RIGHT, 0, 0, 0);
+                                keybd_event(VK_RIGHT, 0, KEYEVENTF_KEYUP, 0);
+    
+                                if(!encontrarPrefixoNumerico(ultimaplv)){
+                                    INPUT ip[2] = {};
+                                    ip[0].type = INPUT_KEYBOARD;
+                                    ip[0].ki.wScan = prefixBrailleMap[L'n'];
+                                    ip[0].ki.dwFlags = KEYEVENTF_UNICODE;
+            
+                                    ip[1] = ip[0];
+                                    ip[1].ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
+            
+                                    SendInput(2, ip, sizeof(INPUT));
+                                }
+                                novaNumeracao = false;
+                            }
+                            else if(!novaNumeracao && !(std::isdigit(key))){
+                                novaNumeracao = true;
+                            }
+    
+                            if(estaEmMaiusculo){
+                                INPUT ip[2] = {};
+                                ip[0].type = INPUT_KEYBOARD;
+                                ip[0].ki.wScan = prefixBrailleMap[L'm'];
+                                ip[0].ki.dwFlags = KEYEVENTF_UNICODE;
+        
+                                ip[1] = ip[0];
+                                ip[1].ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
+        
+                                SendInput(2, ip, sizeof(INPUT));
+    
+                                necessitaVerify = true;
+                            }
+    
+                            INPUT ip[2] = {};
+                            ip[0].type = INPUT_KEYBOARD;
+                            ip[0].ki.wScan = brailleChar;
+                            ip[0].ki.dwFlags = KEYEVENTF_UNICODE;
+    
+                            ip[1] = ip[0];
+                            ip[1].ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
+    
+                            SendInput(2, ip, sizeof(INPUT));
+                            return 1;
+                        }
                     }
                 }
             }
