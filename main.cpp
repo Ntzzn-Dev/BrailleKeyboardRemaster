@@ -437,6 +437,9 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
                 bool estaEmMaiusculo = std::isupper(unicodeChar[0]);
 
                 if(morseCgd){
+                    if(key == L'\b'){
+                        GetLastText();
+                    } else
                     if(!(GetAsyncKeyState(VK_CONTROL) & 0x8000) && morseMap.count(key)){
                         std::wstring morseString = morseMap[key];
 
